@@ -2,7 +2,7 @@
 
 [![Latest Version on Packagist](https://img.shields.io/packagist/v/contena-cms/phpstan-contena.svg?style=flat-square)](https://packagist.org/packages/contena-cms/phpstan-contena)
 [![Total Downloads](https://img.shields.io/packagist/dt/contena-cms/phpstan-contena.svg?style=flat-square)](https://packagist.org/packages/contena-cms/phpstan-contena)
-[![License](https://img.shields.io/github/license/contena-cms/phpstan-contena.svg?style=flat-square)](https://github.com/contena-cmslabs/phpstan-contena/blob/main/LICENSE.md)
+[![License](https://img.shields.io/github/license/contena-cms/phpstan-contena.svg?style=flat-square)](https://github.com/contena-cms/phpstan-contena/blob/main/LICENSE)
 
 This package provides additional PHPStan rules for Contena 6 projects. It helps developers catch common mistakes and enforce best practices specific to Contena development.
 
@@ -207,4 +207,4 @@ Contributions are welcome! Please see [CONTRIBUTING.md](CONTRIBUTING.md) for det
 
 ## License
 
-The MIT License (MIT). Please see [License File](LICENSE.md) for more information.
+Licensed under Apache-2.0. Please see [License File](LICENSE) for more information; the upstream license is bundled in the NOTICE file.

@@ -2,7 +2,7 @@
   "name": "contena-cms/phpstan-contena",
   "description": "PhpStan Rules for Contena",
   "type": "library",
-  "license": "MIT",
+  "license": "Apache-2.0",
   "require": {
     "php": "^8.2",
     "phpstan/phpstan": "^2.1.7",
