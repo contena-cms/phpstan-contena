@@ -1,0 +1,16 @@
+services:
+    -
+        class: Contena\PhpStan\Type\CollectionHasSpecifyingExtension
+        tags:
+            - phpstan.typeSpecifier.methodTypeSpecifyingExtension
+
+    -
+        class: Contena\PhpStan\Collector\DALDefinitionCollector
+        tags:
+            - phpstan.collector
+
+    -
+        class: Contena\PhpStan\Collector\DALEntityCollector
+        tags:
+            - phpstan.collector
+

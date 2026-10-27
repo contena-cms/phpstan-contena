@@ -1,0 +1,10 @@
+parameters:
+    scanFiles:
+        - widens-property.php
+
+services:
+    -
+        class: Contena\PhpStan\Rule\FutureCompatibility\AnnouncedTypeResolver
+    -
+        class: Contena\PhpStan\Type\FuturePropertyTypeExtension
+        tags: [phpstan.broker.expressionTypeResolverExtension]

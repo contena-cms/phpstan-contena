@@ -1,0 +1,44 @@
+rules:
+    - Contena\PhpStan\Rule\ClassExtendUsesAbstractClassWhenExisting
+    - Contena\PhpStan\Rule\DisallowDefaultContextCreation
+    - Contena\PhpStan\Rule\DisallowFunctionsRule
+    - Contena\PhpStan\Rule\DisallowSessionFunctionsRule
+    - Contena\PhpStan\Rule\ForbidGlobBraceRule
+    - Contena\PhpStan\Rule\InternalClassExtendsRule
+    - Contena\PhpStan\Rule\InternalFunctionCallRule
+    - Contena\PhpStan\Rule\InternalMethodCallRule
+    - Contena\PhpStan\Rule\MethodBecomesAbstractRule
+    - Contena\PhpStan\Rule\NoDALFilterByID
+    - Contena\PhpStan\Rule\NoSessionInPaymentHandlerAndStoreApiRule
+    - Contena\PhpStan\Rule\NoSymfonySessionInConstructorRule
+    - Contena\PhpStan\Rule\NoUserEntityGetStoreTokenRule
+    - Contena\PhpStan\Rule\ScheduledTaskTooLowIntervalRule
+    - Contena\PhpStan\Rule\SetForeignKeyRule
+    - Contena\PhpStan\Rule\NoEntityRepositoryInLoopRule
+    - Contena\PhpStan\Rule\NoSuperglobalsRule
+    - Contena\PhpStan\Rule\ForbidLocalDiskWriteRule
+    - Contena\PhpStan\Rule\BestPractise\PreferRouteEventRule
+    - Contena\PhpStan\Rule\BestPractise\DALDefinitionRule
+    - Contena\PhpStan\Rule\ForwardSalesChannelContextToSystemConfigServiceRule
+    - Contena\PhpStan\Rule\ForbidPredictableSaltRule
+    - Contena\PhpStan\Rule\ForbidWeakCryptoKeyRule
+    - Contena\PhpStan\Rule\ForbidInsecureCookieRule
+    - Contena\PhpStan\Rule\ForbidInsecureSymfonyCookieRule
+    - Contena\PhpStan\Rule\ForbidDisabledSslVerificationRule
+    - Contena\PhpStan\Rule\NoEmptyResponseRule
+
+services:
+    -
+        class: Contena\PhpStan\Type\CollectionHasSpecifyingExtension
+        tags:
+            - phpstan.typeSpecifier.methodTypeSpecifyingExtension
+
+    -
+        class: Contena\PhpStan\Collector\DALDefinitionCollector
+        tags:
+            - phpstan.collector
+
+    -
+        class: Contena\PhpStan\Collector\DALEntityCollector
+        tags:
+            - phpstan.collector

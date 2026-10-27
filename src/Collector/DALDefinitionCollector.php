@@ -1,0 +1,379 @@
+<?php
+
+declare(strict_types=1);
+
+namespace Contena\PhpStan\Collector;
+
+use PhpParser\Node;
+use PhpParser\Node\Expr;
+use PhpParser\Node\Expr\Array_;
+use PhpParser\Node\Expr\MethodCall;
+use PhpParser\Node\Expr\New_;
+use PhpParser\Node\Identifier;
+use PhpParser\Node\Name;
+use PhpParser\Node\Name\FullyQualified;
+use PhpParser\Node\Stmt\ClassMethod;
+use PhpParser\Node\Stmt\Return_;
+use PhpParser\NodeFinder;
+use PHPStan\Analyser\Scope;
+use PHPStan\Collectors\Collector;
+use PHPStan\Node\InClassNode;
+use PHPStan\Reflection\ReflectionProvider;
+use Contena\Core\Framework\DataAbstractionLayer\EntityDefinition;
+use Contena\Core\Framework\DataAbstractionLayer\Field\AutoIncrementField;
+use Contena\Core\Framework\DataAbstractionLayer\Field\BreadcrumbField;
+use Contena\Core\Framework\DataAbstractionLayer\Field\ChildCountField;
+use Contena\Core\Framework\DataAbstractionLayer\Field\ChildrenAssociationField;
+use Contena\Core\Framework\DataAbstractionLayer\Field\CreatedAtField;
+use Contena\Core\Framework\DataAbstractionLayer\Field\CreatedByField;
+use Contena\Core\Framework\DataAbstractionLayer\Field\CustomFields;
+use Contena\Core\Framework\DataAbstractionLayer\Field\Flag\Computed;
+use Contena\Core\Framework\DataAbstractionLayer\Field\Flag\Required;
+use Contena\Core\Framework\DataAbstractionLayer\Field\Flag\Runtime;
+use Contena\Core\Framework\DataAbstractionLayer\Field\LockedField;
+use Contena\Core\Framework\DataAbstractionLayer\Field\ManyToManyAssociationField;
+use Contena\Core\Framework\DataAbstractionLayer\Field\ManyToOneAssociationField;
+use Contena\Core\Framework\DataAbstractionLayer\Field\OneToManyAssociationField;
+use Contena\Core\Framework\DataAbstractionLayer\Field\OneToOneAssociationField;
+use Contena\Core\Framework\DataAbstractionLayer\Field\ParentAssociationField;
+use Contena\Core\Framework\DataAbstractionLayer\Field\ParentFkField;
+use Contena\Core\Framework\DataAbstractionLayer\Field\ReferenceVersionField;
+use Contena\Core\Framework\DataAbstractionLayer\Field\TranslatedField;
+use Contena\Core\Framework\DataAbstractionLayer\Field\TranslationsAssociationField;
+use Contena\Core\Framework\DataAbstractionLayer\Field\UpdatedAtField;
+use Contena\Core\Framework\DataAbstractionLayer\Field\UpdatedByField;
+use Contena\Core\Framework\DataAbstractionLayer\Field\VersionField;
+use Contena\Core\Framework\DataAbstractionLayer\FieldCollection;
+use Contena\Core\System\CustomEntity\Schema\DynamicMappingEntityDefinition;
+
+/**
+ * @phpstan-type EntityFields array<string, array{required: bool, computed: bool, runtime: bool}>
+ * @implements Collector<InClassNode, array{name: string, entity: string|null, fields: EntityFields}>
+ */
+class DALDefinitionCollector implements Collector
+{
+    public function __construct(
+        private readonly ReflectionProvider $reflectionProvider,
+    ) {}
+
+    public function getNodeType(): string
+    {
+        return InClassNode::class;
+    }
+
+    /**
+     * @param InClassNode $node
+     * @return array{name: string, entity: string|null, fields: EntityFields}|null
+     */
+    public function processNode(Node $node, Scope $scope): ?array
+    {
+        $classReflection = $scope->getClassReflection();
+        if ($classReflection === null) {
+            return null;
+        }
+
+        if (!$classReflection->isSubclassOf(EntityDefinition::class)) {
+            return null;
+        }
+
+        if ($classReflection->is(DynamicMappingEntityDefinition::class)) {
+            return null;
+        }
+
+        $entityName = $this->getEntityName($node, $scope);
+        if ($entityName === '') {
+            return null;
+        }
+
+        return [
+            'name' => $entityName,
+            'entity' => $this->getEntityClass($node, $scope),
+            'fields' => $this->getFields($node, $scope),
+        ];
+    }
+
+    private function getFieldName(New_ $newInstance, Scope $scope): string
+    {
+        if (!$newInstance->class instanceof Name) {
+            throw new \RuntimeException('Expected class name');
+        }
+
+        $className = $newInstance->class->toString();
+        $class = $this->reflectionProvider->getClass($className);
+
+        if ($class->is(ChildCountField::class)) {
+            return 'childCount';
+        }
+        if ($class->is(AutoIncrementField::class)) {
+            return 'autoIncrement';
+        }
+        if ($class->is(VersionField::class)) {
+            return 'versionId';
+        }
+        if ($class->is(ParentFkField::class)) {
+            return 'parentId';
+        }
+        if ($class->is(ParentAssociationField::class)) {
+            return 'parent';
+        }
+        if ($class->is(TranslationsAssociationField::class)) {
+            return 'translations';
+        }
+        if ($class->is(LockedField::class)) {
+            return 'locked';
+        }
+        if ($class->is(CustomFields::class)) {
+            return 'customFields';
+        }
+        if ($class->is(CreatedAtField::class)) {
+            return 'createdAt';
+        }
+        if ($class->is(UpdatedAtField::class)) {
+            return 'updatedAt';
+        }
+        if ($class->is(CreatedByField::class)) {
+            return 'createdById';
+        }
+        if ($class->is(UpdatedByField::class)) {
+            return 'updatedById';
+        }
+        if ($class->is(BreadcrumbField::class)) {
+            return 'breadcrumb';
+        }
+
+        $args = $newInstance->getArgs();
+        if (empty($args)) {
+            throw new \RuntimeException(sprintf("Cannot handle field %s without arguments", $class->getName()));
+        }
+
+        if ($class->is(ReferenceVersionField::class) && isset($args[0])) {
+            $storageName = null;
+
+            if (isset($args[1])) {
+                $storageName = $this->toStringValue($args[1]->value, $scope);
+            }
+            if ($storageName === null) {
+                $firstArg = $args[0];
+                $firstValue = $scope->getType($firstArg->value);
+                $constantStrings = $firstValue->getConstantStrings();
+
+                if (!empty($constantStrings)) {
+                    $entityName = $constantStrings[0]->getValue();
+
+                    try {
+                        /** @var class-string<EntityDefinition> */
+                        $className = $entityName;
+
+                        $entityInstance = new $className();
+                        $entityName = $entityInstance->getEntityName();
+                    } catch (\Throwable) {
+                    }
+
+                    $storageName = $entityName . '_version_id';
+                }
+            }
+
+            if ($storageName !== null) {
+                $propertyName = explode('_', $storageName);
+                $propertyName = array_map('ucfirst', $propertyName);
+
+                return lcfirst(implode('', $propertyName));
+            }
+
+            return 'versionId';
+        }
+
+        if (
+            (
+                $class->is(TranslatedField::class) ||
+                $class->is(OneToManyAssociationField::class) ||
+                $class->is(ManyToOneAssociationField::class) ||
+                $class->is(OneToOneAssociationField::class) ||
+                $class->is(ManyToManyAssociationField::class)
+            )
+            && !$class->is(ChildrenAssociationField::class)
+            && isset($args[0])
+        ) {
+            $value = $this->toStringValue($args[0]->value, $scope);
+            if ($value !== null) {
+                return $value;
+            }
+
+            throw new \RuntimeException(sprintf("Cannot handle field %s with argument of type %s", $class->getName(), get_class($args[0]->value)));
+        }
+
+        if ($class->is(ChildrenAssociationField::class) && !isset($args[1])) {
+            return 'children';
+        }
+
+        if (isset($args[1])) {
+            $value = $this->toStringValue($args[1]->value, $scope);
+            if ($value !== null) {
+                return $value;
+            }
+        }
+
+        throw new \RuntimeException(sprintf("Cannot handle field %s with arguments %s", $class->getName(), json_encode($args)));
+    }
+
+    private function toStringValue(Expr $expr, Scope $scope): ?string
+    {
+        $constantStrings = $scope->getType($expr)->getConstantStrings();
+        if (count($constantStrings) !== 1) {
+            return null;
+        }
+
+        $constantString = $constantStrings[0];
+        return $constantString->getValue();
+    }
+
+    /**
+     * @param EntityFields $fields
+     */
+    private function handleField(array &$fields, MethodCall|New_ $methodCall, Scope $scope): void
+    {
+        if ($methodCall instanceof MethodCall) {
+            $flags = ['required' => false, 'computed' => false, 'runtime' => false];
+            $currentMethodCall = $methodCall;
+
+            while ($currentMethodCall->var instanceof MethodCall) {
+                if ($currentMethodCall->name instanceof Identifier && (string) $currentMethodCall->name === 'addFlag') {
+                    foreach ($currentMethodCall->getArgs() as $arg) {
+                        if ($arg->value instanceof New_ && $arg->value->class instanceof Name) {
+                            $className = $arg->value->class->toString();
+                            if ($className === Required::class) {
+                                $flags['required'] = true;
+                            }
+                            if ($className === Runtime::class) {
+                                $flags['runtime'] = true;
+                            }
+                            if ($className === Computed::class) {
+                                $flags['computed'] = true;
+                            }
+                        }
+                    }
+                }
+                $currentMethodCall = $currentMethodCall->var;
+            }
+
+            if ($currentMethodCall->var instanceof New_) {
+                $fieldName = $this->getFieldName($currentMethodCall->var, $scope);
+                $fields[$fieldName] = $flags;
+            }
+        }
+
+        if ($methodCall instanceof New_) {
+            $fieldName = $this->getFieldName($methodCall, $scope);
+            $fields[$fieldName] = ['required' => false, 'computed' => false, 'runtime' => false];
+        }
+    }
+
+    /**
+     * @return EntityFields
+     */
+    private function getFields(InClassNode $node, Scope $scope): array
+    {
+        $fields = [];
+        $nodeFinder = new NodeFinder();
+
+        foreach ($node->getOriginalNode()->stmts as $method) {
+            if ($method instanceof ClassMethod && $method->name->name === 'defineFields') {
+                if ($method->stmts === null) {
+                    continue;
+                }
+
+                /** @var New_|null $fieldCollection */
+                $fieldCollection = $nodeFinder->findFirst($method->stmts, function (Node $node): bool {
+                    return $node instanceof New_ &&
+                        $node->class instanceof FullyQualified &&
+                        $node->class->toString() === FieldCollection::class;
+                });
+
+                if ($fieldCollection instanceof New_ && count($fieldCollection->getArgs())) {
+                    $arrayArgument = $fieldCollection->getArgs()[0];
+                    if ($arrayArgument->value instanceof Array_) {
+                        foreach ($arrayArgument->value->items as $item) {
+                            if (($item->value instanceof MethodCall || $item->value instanceof New_)) {
+                                $this->handleField($fields, $item->value, $scope);
+                            }
+                        }
+                    }
+                }
+
+                /** @var array<MethodCall> $calls */
+                $calls = $nodeFinder->find($method->stmts, function (Node $node): bool {
+                    return $node instanceof MethodCall &&
+                        $node->name instanceof Identifier &&
+                        $node->name->name === 'add';
+                });
+
+                foreach ($calls as $call) {
+                    foreach ($call->getArgs() as $arg) {
+                        if ($arg->value instanceof MethodCall || $arg->value instanceof New_) {
+                            $this->handleField($fields, $arg->value, $scope);
+                        }
+                    }
+                }
+            }
+        }
+
+        return $fields;
+    }
+
+    private function getEntityName(InClassNode $node, Scope $scope): string
+    {
+        $nodeFinder = new NodeFinder();
+
+        foreach ($node->getOriginalNode()->stmts as $method) {
+            if (
+                $method instanceof ClassMethod &&
+                $method->name->name === 'getEntityName' &&
+                $method->stmts !== null
+            ) {
+                /** @var Return_|null $returnNode */
+                $returnNode = $nodeFinder->findFirst($method->stmts, function (Node $node): bool {
+                    return $node instanceof Return_ && $node->expr !== null;
+                });
+
+                if ($returnNode instanceof Return_ && $returnNode->expr instanceof Expr) {
+                    $entityName = $scope->getType($returnNode->expr);
+                    $constantStrings = $entityName->getConstantStrings();
+                    if (!empty($constantStrings)) {
+                        return $constantStrings[0]->getValue();
+                    }
+                }
+            }
+        }
+
+        return '';
+    }
+
+    private function getEntityClass(InClassNode $node, Scope $scope): string
+    {
+        $nodeFinder = new NodeFinder();
+
+        foreach ($node->getOriginalNode()->stmts as $method) {
+            if (
+                $method instanceof ClassMethod &&
+                $method->name->name === 'getEntityClass' &&
+                $method->stmts !== null
+            ) {
+
+                /** @var Return_|null $returnNode */
+                $returnNode = $nodeFinder->findFirst($method->stmts, function (Node $node): bool {
+                    return $node instanceof Return_ && $node->expr !== null;
+                });
+
+                if ($returnNode instanceof Return_ && $returnNode->expr instanceof Expr) {
+                    $entityName = $scope->getType($returnNode->expr);
+                    $constantStrings = $entityName->getConstantStrings();
+                    if (!empty($constantStrings)) {
+                        return $constantStrings[0]->getValue();
+                    }
+                }
+            }
+        }
+
+        return '';
+    }
+}
